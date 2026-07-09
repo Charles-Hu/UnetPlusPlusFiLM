@@ -46,6 +46,8 @@ model = create_unetplusplus_film_model(
     combined_embedding_dim=128,
     embedding_use_norm=False,
     deep_supervision=True,
+    convolutional_pooling=True,
+    convolutional_upsampling=True,
 )
 
 image = torch.randn(2, 1, 128, 128)
@@ -60,12 +62,53 @@ outputs = model(image, conditions)
 By default, `deep_supervision=True`, so `outputs` is a tuple of segmentation
 maps. Set `deep_supervision=False` to return only the final prediction.
 
+The example uses `convolutional_upsampling=True` because the retained UNet++
+nested decoder expects the upsampled branch to also project channels to the
+matching skip-connection width. Plain interpolation only changes spatial size
+and is therefore disabled for this implementation.
+
 Key embedding parameters:
 
 - `embedding_dim`: output size of each field-specific embedding MLP.
 - `combined_embedding_dim`: output size after all field embeddings are combined.
 - `embedding_use_norm`: whether to insert `LayerNorm` in the field-specific MLPs
   and the shared combiner MLP. Defaults to `False`.
+
+## FiLM in UNet++
+
+The original UNet++ encoder-decoder graph is kept, including the nested skip
+connections and deep supervision heads. FiLM is added inside the convolution
+blocks rather than changing the UNet++ topology.
+
+Each convolution block follows this order:
+
+```text
+Convolution -> Dropout -> Normalization -> FiLM -> Activation
+```
+
+For a feature map with `C` channels, the shared conditioning embedding is passed
+through a small projection layer to produce `2 * C` values:
+
+```text
+[batch_size, combined_embedding_dim] -> [batch_size, 2 * C]
+```
+
+These values are split into channel-wise `scale` and `shift` tensors. They are
+reshaped to broadcast across the spatial dimensions, so the same conditioning
+information can modulate either 2-D features `[N, C, H, W]` or 3-D features
+`[N, C, D, H, W]`.
+
+Inside each convolution block, the normalized feature map is modulated as:
+
+```text
+features * (1 + scale) + shift
+```
+
+FiLM is applied to every `ConvDropoutNormNonlin` block used by the UNet++
+context path, bottleneck, and nested decoder paths. This means the same
+patient-, scanner-, or metadata-derived conditioning vector can influence both
+low-level encoder features and high-level decoder features throughout the
+network.
 
 ## Conditioning Embeddings
 
@@ -107,45 +150,9 @@ num_fields * embedding_dim -> combined_embedding_dim -> combined_embedding_dim
 ```
 
 The combiner also follows `embedding_use_norm`: when enabled, `LayerNorm` is
-inserted after both combiner linear layers.
-
-The resulting `[batch_size, combined_embedding_dim]` tensor is used by each FiLM
-layer to generate channel-wise scale and shift parameters. Inside each
-convolution block, the normalized feature map is modulated as:
-
-```text
-features * (1 + scale) + shift
-```
-
-## FiLM in UNet++
-
-The original UNet++ encoder-decoder graph is kept, including the nested skip
-connections and deep supervision heads. FiLM is added inside the convolution
-blocks rather than changing the UNet++ topology.
-
-Each convolution block follows this order:
-
-```text
-Convolution -> Dropout -> Normalization -> FiLM -> Activation
-```
-
-For a feature map with `C` channels, the shared conditioning embedding is passed
-through a small projection layer to produce `2 * C` values:
-
-```text
-[batch_size, combined_embedding_dim] -> [batch_size, 2 * C]
-```
-
-These values are split into channel-wise `scale` and `shift` tensors. They are
-reshaped to broadcast across the spatial dimensions, so the same conditioning
-information can modulate either 2-D features `[N, C, H, W]` or 3-D features
-`[N, C, D, H, W]`.
-
-FiLM is applied to every `ConvDropoutNormNonlin` block used by the UNet++
-context path, bottleneck, and nested decoder paths. This means the same
-patient-, scanner-, or metadata-derived conditioning vector can influence both
-low-level encoder features and high-level decoder features throughout the
-network.
+inserted after both combiner linear layers. The resulting
+`[batch_size, combined_embedding_dim]` tensor is used as the shared conditioning
+embedding for FiLM layers throughout the network.
 
 ## Project Structure
 

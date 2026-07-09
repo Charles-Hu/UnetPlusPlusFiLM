@@ -49,8 +49,8 @@ class Generic_UNetPlusPlus_FiLM(nn.Module):
         pool_op_kernel_sizes=None,
         conv_kernel_sizes=None,
         upscale_logits=False,
-        convolutional_pooling=False,
-        convolutional_upsampling=False,
+        convolutional_pooling=True,
+        convolutional_upsampling=True,
         max_num_features=None,
         seg_output_use_bias=False,
     ):
@@ -65,6 +65,11 @@ class Generic_UNetPlusPlus_FiLM(nn.Module):
             raise ValueError("the retained UNet++ nested forward graph requires num_pool=5")
         if num_conv_per_stage < 2:
             raise ValueError("num_conv_per_stage must be at least 2")
+        if not convolutional_upsampling:
+            raise NotImplementedError(
+                "convolutional_upsampling=False currently causes channel mismatch in the "
+                "retained UNet++ nested decoder graph. Use convolutional_upsampling=True."
+            )
 
         norm_op_kwargs = norm_op_kwargs or {"eps": 1e-5, "affine": True, "momentum": 0.1}
         dropout_op_kwargs = dropout_op_kwargs or {"p": 0.5, "inplace": True}

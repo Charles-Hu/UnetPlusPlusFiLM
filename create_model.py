@@ -15,6 +15,8 @@ def create_unetplusplus_film_model(
     embedding_use_norm=False,
     num_pool=5,
     conv_dim=2,
+    convolutional_pooling=True,
+    convolutional_upsampling=True,
     **kwargs,
 ):
     """Create a 2-D or 3-D Generic_UNetPlusPlus_FiLM instance.
@@ -41,5 +43,7 @@ def create_unetplusplus_film_model(
         embedding_dim=embedding_dim,
         combined_embedding_dim=combined_embedding_dim,
         embedding_use_norm=embedding_use_norm,
+        convolutional_pooling=convolutional_pooling,
+        convolutional_upsampling=convolutional_upsampling,
         **kwargs,
     )
