@@ -117,6 +117,36 @@ convolution block, the normalized feature map is modulated as:
 features * (1 + scale) + shift
 ```
 
+## FiLM in UNet++
+
+The original UNet++ encoder-decoder graph is kept, including the nested skip
+connections and deep supervision heads. FiLM is added inside the convolution
+blocks rather than changing the UNet++ topology.
+
+Each convolution block follows this order:
+
+```text
+Convolution -> Dropout -> Normalization -> FiLM -> Activation
+```
+
+For a feature map with `C` channels, the shared conditioning embedding is passed
+through a small projection layer to produce `2 * C` values:
+
+```text
+[batch_size, combined_embedding_dim] -> [batch_size, 2 * C]
+```
+
+These values are split into channel-wise `scale` and `shift` tensors. They are
+reshaped to broadcast across the spatial dimensions, so the same conditioning
+information can modulate either 2-D features `[N, C, H, W]` or 3-D features
+`[N, C, D, H, W]`.
+
+FiLM is applied to every `ConvDropoutNormNonlin` block used by the UNet++
+context path, bottleneck, and nested decoder paths. This means the same
+patient-, scanner-, or metadata-derived conditioning vector can influence both
+low-level encoder features and high-level decoder features throughout the
+network.
+
 ## Project Structure
 
 - `create_model.py`: model factory at the package root.
