@@ -3,10 +3,14 @@
 A standalone PyTorch implementation of a five-level UNet++ model with FiLM
 conditioning in each convolution block.
 
+This implementation is modified from the official UNet++ implementation:
+[MrGiovanni/UNetPlusPlus](https://github.com/MrGiovanni/UNetPlusPlus).
+
 ## Features
 
 - Supports 2-D and 3-D convolution backends.
 - Encodes one or more conditioning fields and injects them through FiLM layers.
+- Optionally applies `LayerNorm` inside the conditioning embedding MLPs.
 - Keeps the model self-contained with only PyTorch and NumPy dependencies.
 
 ## Installation
@@ -33,18 +37,85 @@ model = create_unetplusplus_film_model(
     input_channels=1,
     base_num_features=30,
     num_classes=3,
-    embedding_input_dims={"age": 1},
+    embedding_input_dims={
+        "age": 1,
+        "sex": 1,
+        "scanner": 3,
+    },
     embedding_dim=32,
     combined_embedding_dim=128,
+    embedding_use_norm=False,
+    deep_supervision=True,
 )
 
 image = torch.randn(2, 1, 128, 128)
-age = torch.randn(2, 1)
-outputs = model(image, {"age": age})
+conditions = {
+    "age": torch.randn(2, 1),
+    "sex": torch.tensor([[0.0], [1.0]]),
+    "scanner": torch.randn(2, 3),
+}
+outputs = model(image, conditions)
 ```
 
 By default, `deep_supervision=True`, so `outputs` is a tuple of segmentation
 maps. Set `deep_supervision=False` to return only the final prediction.
+
+Key embedding parameters:
+
+- `embedding_dim`: output size of each field-specific embedding MLP.
+- `combined_embedding_dim`: output size after all field embeddings are combined.
+- `embedding_use_norm`: whether to insert `LayerNorm` in the field-specific MLPs
+  and the shared combiner MLP. Defaults to `False`.
+
+## Conditioning Embeddings
+
+Conditioning variables are passed as a single dictionary whose keys match
+`embedding_input_dims`. Each value must be a 2-D tensor with shape
+`[batch_size, input_dim]`.
+
+For each field, the model builds an independent embedding MLP:
+
+```text
+input_dim -> embedding_dim -> embedding_dim
+```
+
+With the default `embedding_use_norm=False`, each field uses:
+
+```text
+Linear -> SiLU -> Linear -> SiLU
+```
+
+With `embedding_use_norm=True`, each field uses:
+
+```text
+Linear -> LayerNorm -> SiLU -> Linear -> LayerNorm -> SiLU
+```
+
+Using the example above, `age`, `sex`, and `scanner` are encoded separately into
+three tensors of shape `[batch_size, embedding_dim]`. These field embeddings are
+then concatenated in the same key order as `embedding_input_dims`:
+
+```text
+[age_embedding, sex_embedding, scanner_embedding]
+    -> [batch_size, num_fields * embedding_dim]
+```
+
+The concatenated vector is passed through a shared combiner MLP:
+
+```text
+num_fields * embedding_dim -> combined_embedding_dim -> combined_embedding_dim
+```
+
+The combiner also follows `embedding_use_norm`: when enabled, `LayerNorm` is
+inserted after both combiner linear layers.
+
+The resulting `[batch_size, combined_embedding_dim]` tensor is used by each FiLM
+layer to generate channel-wise scale and shift parameters. Inside each
+convolution block, the normalized feature map is modulated as:
+
+```text
+features * (1 + scale) + shift
+```
 
 ## Project Structure
 

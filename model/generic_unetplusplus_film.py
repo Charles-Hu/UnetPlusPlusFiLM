@@ -32,6 +32,7 @@ class Generic_UNetPlusPlus_FiLM(nn.Module):
         embedding_input_dims,
         embedding_dim,
         combined_embedding_dim,
+        embedding_use_norm=False,
         num_conv_per_stage=2,
         feat_map_mul_on_downscale=2,
         conv_op=nn.Conv2d,
@@ -71,8 +72,12 @@ class Generic_UNetPlusPlus_FiLM(nn.Module):
         self.embedding_input_dims = dict(embedding_input_dims)
         self.embedding_dim = embedding_dim
         self.combined_embedding_dim = combined_embedding_dim
+        self.embedding_use_norm = embedding_use_norm
         self.conditioning_embedding = ConditioningEmbedding(
-            self.embedding_input_dims, embedding_dim, combined_embedding_dim
+            self.embedding_input_dims,
+            embedding_dim,
+            combined_embedding_dim,
+            use_norm=embedding_use_norm,
         )
         self.final_nonlin = final_nonlin
         self._deep_supervision = deep_supervision

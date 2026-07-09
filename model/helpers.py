@@ -44,25 +44,49 @@ class FeatureWiseLinearModulation(nn.Module):
 class ConditioningEmbedding(nn.Module):
     """Encode each raw field independently, then combine all field embeddings."""
 
-    def __init__(self, input_dims, embedding_dim, combined_embedding_dim):
+    def __init__(self, input_dims, embedding_dim, combined_embedding_dim, use_norm=False):
         super().__init__()
+        if not isinstance(use_norm, bool):
+            raise TypeError(f"use_norm must be a bool, got {type(use_norm).__name__}")
         self.input_dims = dict(input_dims)
         self.keys = tuple(self.input_dims)
+        self.use_norm = use_norm
         self.cond_embed = nn.ModuleDict(
             {
-                key: nn.Sequential(
-                    nn.Linear(input_dim, embedding_dim),
-                    nn.SiLU(),
-                    nn.Linear(embedding_dim, embedding_dim),
-                    nn.SiLU(),
-                )
+                key: self._make_field_embedding(input_dim, embedding_dim, use_norm)
                 for key, input_dim in self.input_dims.items()
             }
         )
-        self.combiner = nn.Sequential(
-            nn.Linear(len(self.keys) * embedding_dim, combined_embedding_dim),
-            nn.SiLU(),
-            nn.Linear(combined_embedding_dim, combined_embedding_dim),
+        self.combiner = self._make_combiner(
+            len(self.keys) * embedding_dim, combined_embedding_dim, use_norm
+        )
+
+    @staticmethod
+    def _linear_block(in_features, out_features, use_norm, activate=True):
+        layers = [nn.Linear(in_features, out_features)]
+        if use_norm:
+            layers.append(nn.LayerNorm(out_features))
+        if activate:
+            layers.append(nn.SiLU())
+        return layers
+
+    @classmethod
+    def _make_field_embedding(cls, input_dim, embedding_dim, use_norm):
+        return nn.Sequential(
+            *cls._linear_block(input_dim, embedding_dim, use_norm),
+            *cls._linear_block(embedding_dim, embedding_dim, use_norm),
+        )
+
+    @classmethod
+    def _make_combiner(cls, input_dim, combined_embedding_dim, use_norm):
+        return nn.Sequential(
+            *cls._linear_block(input_dim, combined_embedding_dim, use_norm),
+            *cls._linear_block(
+                combined_embedding_dim,
+                combined_embedding_dim,
+                use_norm,
+                activate=False,
+            ),
         )
 
     def forward(self, conditions, batch_size):
