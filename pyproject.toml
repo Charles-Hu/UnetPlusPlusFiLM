@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "unetplusplus-film"
+version = "0.1.0"
+description = "Standalone UNet++ model with FiLM conditioning for PyTorch."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.23",
+    "torch>=2.0",
+]
+authors = [
+    { name = "Charles" },
+]
+keywords = ["pytorch", "unet++", "film", "segmentation", "medical-imaging"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[tool.setuptools]
+packages = ["UnetPlusPlusFiLM", "UnetPlusPlusFiLM.model"]
+
+[tool.setuptools.package-dir]
+UnetPlusPlusFiLM = "."
