@@ -44,7 +44,7 @@ class Generic_UNetPlusPlus_FiLM(nn.Module):
         nonlin_kwargs=None,
         deep_supervision=True,
         dropout_in_localization=False,
-        final_nonlin=softmax_helper,
+        final_nonlin=None,
         weight_initializer=None,
         pool_op_kernel_sizes=None,
         conv_kernel_sizes=None,
@@ -264,24 +264,29 @@ class Generic_UNetPlusPlus_FiLM(nn.Module):
             x = self.td[index - 1](x)
         return self.conv_blocks_context[index](x, embedding)
 
+    def _apply_final_nonlin(self, x):
+        if self.final_nonlin is None:
+            return x
+        return self.final_nonlin(x)
+
     def forward(self, x, conditions):
         embedding = self.conditioning_embedding(conditions, x.shape[0])
         outputs = []
         x0_0 = self._ctx(0, x, embedding)
         x1_0 = self._ctx(1, x0_0, embedding)
         x0_1 = self.loc4[0](torch.cat([x0_0, self.up4[0](x1_0)], 1), embedding)
-        outputs.append(self.final_nonlin(self.seg_outputs[-1](x0_1)))
+        outputs.append(self._apply_final_nonlin(self.seg_outputs[-1](x0_1)))
 
         x2_0 = self._ctx(2, x1_0, embedding)
         x1_1 = self.loc3[0](torch.cat([x1_0, self.up3[0](x2_0)], 1), embedding)
         x0_2 = self.loc3[1](torch.cat([x0_0, x0_1, self.up3[1](x1_1)], 1), embedding)
-        outputs.append(self.final_nonlin(self.seg_outputs[-2](x0_2)))
+        outputs.append(self._apply_final_nonlin(self.seg_outputs[-2](x0_2)))
 
         x3_0 = self._ctx(3, x2_0, embedding)
         x2_1 = self.loc2[0](torch.cat([x2_0, self.up2[0](x3_0)], 1), embedding)
         x1_2 = self.loc2[1](torch.cat([x1_0, x1_1, self.up2[1](x2_1)], 1), embedding)
         x0_3 = self.loc2[2](torch.cat([x0_0, x0_1, x0_2, self.up2[2](x1_2)], 1), embedding)
-        outputs.append(self.final_nonlin(self.seg_outputs[-3](x0_3)))
+        outputs.append(self._apply_final_nonlin(self.seg_outputs[-3](x0_3)))
 
         x4_0 = self._ctx(4, x3_0, embedding)
         x3_1 = self.loc1[0](torch.cat([x3_0, self.up1[0](x4_0)], 1), embedding)
@@ -290,7 +295,7 @@ class Generic_UNetPlusPlus_FiLM(nn.Module):
         x0_4 = self.loc1[3](
             torch.cat([x0_0, x0_1, x0_2, x0_3, self.up1[3](x1_3)], 1), embedding
         )
-        outputs.append(self.final_nonlin(self.seg_outputs[-4](x0_4)))
+        outputs.append(self._apply_final_nonlin(self.seg_outputs[-4](x0_4)))
 
         x5_0 = self._ctx(5, x4_0, embedding)
         x4_1 = self.loc0[0](torch.cat([x4_0, self.up0[0](x5_0)], 1), embedding)
@@ -302,7 +307,7 @@ class Generic_UNetPlusPlus_FiLM(nn.Module):
         x0_5 = self.loc0[4](
             torch.cat([x0_0, x0_1, x0_2, x0_3, x0_4, self.up0[4](x1_4)], 1), embedding
         )
-        outputs.append(self.final_nonlin(self.seg_outputs[-5](x0_5)))
+        outputs.append(self._apply_final_nonlin(self.seg_outputs[-5](x0_5)))
         if self._deep_supervision and self.do_ds:
             return tuple(
                 [outputs[-1]]

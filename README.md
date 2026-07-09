@@ -48,6 +48,9 @@ model = create_unetplusplus_film_model(
     deep_supervision=True,
     convolutional_pooling=True,
     convolutional_upsampling=True,
+    dropout_op_kwargs={"p": 0.5, "inplace": True},
+    dropout_in_localization=False,
+    final_nonlin=None,
 )
 
 image = torch.randn(2, 1, 128, 128)
@@ -62,10 +65,22 @@ outputs = model(image, conditions)
 By default, `deep_supervision=True`, so `outputs` is a tuple of segmentation
 maps. Set `deep_supervision=False` to return only the final prediction.
 
+By default, `final_nonlin=None`, so the model returns raw logits or raw
+regression values. This is the safest default for both segmentation training
+with `CrossEntropyLoss` and regression/SR tasks. If you need probabilities, pass
+an explicit activation such as `final_nonlin=softmax_helper`, or apply
+softmax/sigmoid outside the model during inference.
+
 The example uses `convolutional_upsampling=True` because the retained UNet++
 nested decoder expects the upsampled branch to also project channels to the
 matching skip-connection width. Plain interpolation only changes spatial size
 and is therefore disabled for this implementation.
+
+With the default `num_pool=5` and `(2, 2)` or `(2, 2, 2)` pooling kernels, each
+input spatial dimension should be divisible by `32`. For example, use 2-D input
+sizes such as `128 x 128`, or 3-D patch sizes whose depth, height, and width are
+all multiples of `32`. Otherwise, nested skip connections can fail with spatial
+size mismatches during concatenation.
 
 Key embedding parameters:
 
@@ -73,6 +88,22 @@ Key embedding parameters:
 - `combined_embedding_dim`: output size after all field embeddings are combined.
 - `embedding_use_norm`: whether to insert `LayerNorm` in the field-specific MLPs
   and the shared combiner MLP. Defaults to `False`.
+
+Key dropout parameters:
+
+- `dropout_op_kwargs`: keyword arguments passed to the selected dropout layer.
+  With `conv_dim=2`, the factory uses `nn.Dropout2d`; with `conv_dim=3`, it uses
+  `nn.Dropout3d`. The default is `{"p": 0.5, "inplace": True}`.
+- `dropout_in_localization`: whether to keep dropout enabled in the nested
+  decoder/localization paths. Defaults to `False`, which sets decoder dropout
+  probability to `0.0` while keeping encoder and bottleneck dropout controlled
+  by `dropout_op_kwargs`.
+
+Key output activation parameter:
+
+- `final_nonlin`: optional activation applied to each output head. Defaults to
+  `None`, which returns raw logits/values. Use this for regression, SR,
+  denoising, residual prediction, and segmentation losses that expect logits.
 
 ## FiLM in UNet++
 
