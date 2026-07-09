@@ -46,8 +46,6 @@ model = create_unetplusplus_film_model(
     combined_embedding_dim=128,
     embedding_use_norm=False,
     deep_supervision=True,
-    convolutional_pooling=True,
-    convolutional_upsampling=True,
     dropout_op_kwargs={"p": 0.5, "inplace": True},
     dropout_in_localization=False,
     final_nonlin=None,
@@ -71,10 +69,11 @@ with `CrossEntropyLoss` and regression/SR tasks. If you need probabilities, pass
 an explicit activation such as `final_nonlin=softmax_helper`, or apply
 softmax/sigmoid outside the model during inference.
 
-The example uses `convolutional_upsampling=True` because the retained UNet++
-nested decoder expects the upsampled branch to also project channels to the
-matching skip-connection width. Plain interpolation only changes spatial size
-and is therefore disabled for this implementation.
+The retained UNet++ nested decoder uses learned transposed convolutions for
+upsampling, so the upsampled branch changes both spatial size and channel width
+before concatenation with skip connections. Plain interpolation is not exposed
+because it only changes spatial size and can cause channel mismatches in this
+decoder graph.
 
 With the default `num_pool=5` and `(2, 2)` or `(2, 2, 2)` pooling kernels, each
 input spatial dimension should be divisible by `32`. For example, use 2-D input

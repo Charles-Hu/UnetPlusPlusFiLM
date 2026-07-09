@@ -49,8 +49,6 @@ class Generic_UNetPlusPlus_FiLM(nn.Module):
         pool_op_kernel_sizes=None,
         conv_kernel_sizes=None,
         upscale_logits=False,
-        convolutional_pooling=True,
-        convolutional_upsampling=True,
         max_num_features=None,
         seg_output_use_bias=False,
     ):
@@ -65,11 +63,6 @@ class Generic_UNetPlusPlus_FiLM(nn.Module):
             raise ValueError("the retained UNet++ nested forward graph requires num_pool=5")
         if num_conv_per_stage < 2:
             raise ValueError("num_conv_per_stage must be at least 2")
-        if not convolutional_upsampling:
-            raise NotImplementedError(
-                "convolutional_upsampling=False currently causes channel mismatch in the "
-                "retained UNet++ nested decoder graph. Use convolutional_upsampling=True."
-            )
 
         norm_op_kwargs = norm_op_kwargs or {"eps": 1e-5, "affine": True, "momentum": 0.1}
         dropout_op_kwargs = dropout_op_kwargs or {"p": 0.5, "inplace": True}
@@ -88,8 +81,6 @@ class Generic_UNetPlusPlus_FiLM(nn.Module):
         self._deep_supervision = deep_supervision
         self.do_ds = deep_supervision
         self.upscale_logits = upscale_logits
-        self.convolutional_pooling = convolutional_pooling
-        self.convolutional_upsampling = convolutional_upsampling
         self.conv_op = conv_op
 
         if conv_op == nn.Conv2d:
@@ -121,25 +112,19 @@ class Generic_UNetPlusPlus_FiLM(nn.Module):
         )
 
         self.conv_blocks_context = nn.ModuleList()
-        self.td = nn.ModuleList()
         in_features, out_features = input_channels, base_num_features
         for level in range(num_pool):
-            stride = pool_op_kernel_sizes[level - 1] if level and convolutional_pooling else None
+            stride = pool_op_kernel_sizes[level - 1] if level else None
             self.conv_blocks_context.append(
                 self._stack(in_features, out_features, num_conv_per_stage, level, stride)
             )
-            if not convolutional_pooling:
-                self.td.append(pool_op(pool_op_kernel_sizes[level]))
             in_features = out_features
             out_features = min(
                 int(np.round(out_features * feat_map_mul_on_downscale)), self.max_num_features
             )
 
-        bottleneck_out = (
-            out_features if convolutional_upsampling
-            else self.conv_blocks_context[-1].output_channels
-        )
-        bottleneck_stride = pool_op_kernel_sizes[-1] if convolutional_pooling else None
+        bottleneck_out = out_features
+        bottleneck_stride = pool_op_kernel_sizes[-1]
         self.conv_blocks_context.append(
             FiLMStage(
                 self._stack(
@@ -241,15 +226,9 @@ class Generic_UNetPlusPlus_FiLM(nn.Module):
             from_skip = self.conv_blocks_context[-(2 + u)].output_channels
             concat_features = from_skip * (2 + u - z)
             first_output = from_skip if first_output is None else first_output
-            if u != num_pool - 1 and not self.convolutional_upsampling:
-                final_features = self.conv_blocks_context[-(3 + u)].output_channels
-            else:
-                final_features = from_skip
-            if self.convolutional_upsampling:
-                kernel = self.pool_op_kernel_sizes[-(u + 1)]
-                upsamplers.append(transpconv(from_down, from_skip, kernel, kernel, bias=False))
-            else:
-                upsamplers.append(Upsample(self.pool_op_kernel_sizes[-(u + 1)], mode))
+            final_features = from_skip
+            kernel = self.pool_op_kernel_sizes[-(u + 1)]
+            upsamplers.append(transpconv(from_down, from_skip, kernel, kernel, bias=False))
             level = num_pool - (u + 1)
             locations.append(
                 FiLMStage(
@@ -260,8 +239,6 @@ class Generic_UNetPlusPlus_FiLM(nn.Module):
         return locations, upsamplers, first_output
 
     def _ctx(self, index, x, embedding):
-        if index and not self.convolutional_pooling:
-            x = self.td[index - 1](x)
         return self.conv_blocks_context[index](x, embedding)
 
     def _apply_final_nonlin(self, x):
